@@ -26,7 +26,7 @@
 </div>
 
 <div id="canvas-container">
-    <div class="info-panel">Solo una caja se mueve a la vez. Se ajustará automáticamente al piso u otras cajas. Cajas numeradas.</div>
+    <div class="info-panel">Arriba: Cajas numeradas. Solo una caja se mueve a la vez y se ajusta al suelo.</div>
 </div>
 
 <script type="module">
@@ -38,7 +38,7 @@
     let groundMesh, boxesArray = [];
     let selectedObject = null;
     let currentDragControls = null;
-    let boxCounter = 1; // Contador de cajas
+    let boxCounter = 1; // El contador que pediste
 
     function init() {
         scene = new THREE.Scene();
@@ -59,7 +59,6 @@
         light.position.set(1, 1, 1).normalize();
         scene.add(light);
 
-        // DIBUJAR SUELO (PISO DE LA N400)
         const groundGeo = new THREE.PlaneGeometry(300, 300);
         const groundMat = new THREE.MeshBasicMaterial({ color: 0xc0c0c0, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
         groundMesh = new THREE.Mesh(groundGeo, groundMat);
@@ -70,7 +69,6 @@
         const grid = new THREE.GridHelper(300, 10, 0x000000, 0x000000);
         scene.add(grid);
 
-        // REGLA VISUAL
         const materialRegla = new THREE.LineBasicMaterial({ color: 0x000000 });
         for (let i = 0; i <= 150; i += 10) {
             const puntos = [new THREE.Vector3(-100, i, 0), new THREE.Vector3(-90, i, 0)];
@@ -82,7 +80,6 @@
         iniciarLogicaSeleccionUnica();
     }
 
-    // LÓGICA DE SELECCIÓN ÚNICA
     function iniciarLogicaSeleccionUnica() {
         renderer.domElement.addEventListener('click', (event) => {
             const mouse = new THREE.Vector2();
@@ -95,22 +92,13 @@
             const intersects = raycaster.intersectObjects(boxesArray);
 
             if (intersects.length > 0) {
-                // Deseleccionar anterior
-                // OJO: Ya no cambiamos el color, sino el borde
-                if (selectedObject) {
-                    const edges = selectedObject.children[0];
-                    edges.material.color.setHex(0xffffff); // Borde blanco
-                }
+                if (selectedObject) selectedObject.material.color.setHex(0xffffff);
 
-                // Seleccionar nueva
                 selectedObject = intersects[0].object;
-                const edges = selectedObject.children[0];
-                edges.material.color.setHex(0x0000ff); // Borde azul de selección
+                selectedObject.material.color.setHex(0x87CEEB); 
 
-                // Eliminar controles de arrastre anteriores
                 if (currentDragControls) currentDragControls.dispose();
 
-                // Crear NUEVOS controles de arrastre SÓLO para esta caja seleccionada
                 currentDragControls = new DragControls([selectedObject], camera, renderer.domElement);
                 currentDragControls.addEventListener('dragstart', () => controls.enabled = false);
                 currentDragControls.addEventListener('drag', onDragSnap);
@@ -121,18 +109,13 @@
                 });
 
             } else {
-                // Si no toqué ninguna caja, deseleccionar
-                if (selectedObject) {
-                    const edges = selectedObject.children[0];
-                    edges.material.color.setHex(0xffffff); 
-                }
+                if (selectedObject) selectedObject.material.color.setHex(0xffffff);
                 selectedObject = null;
                 if (currentDragControls) currentDragControls.dispose();
             }
         });
     }
 
-    // LÓGICA DE AJUSTE AUTOMÁTICO DE ALTURA
     function onDragSnap(event) {
         const object = event.object;
         const raycasterDown = new THREE.Raycaster();
@@ -146,35 +129,30 @@
             const closestIntersection = intersects[0];
             const objectHeight = object.geometry.parameters.height;
             object.position.y = closestIntersection.point.y + (objectHeight / 2);
-
         } else {
             object.position.y = (object.geometry.parameters.height / 2); 
         }
     }
 
-    // --- LÓGICA DE SOLUCIÓN (CAJAS NUMERADAS CON TEXTURA) ---
-    function createBoxNumberTexture(number, color) {
-        // Crear un canvas temporal para "dibujar" el número
+    // Función para crear el dibujo del número
+    function crearTexturaNumero(numero) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = 128; // Ancho de la textura
-        canvas.height = 128; // Alto de la textura
+        canvas.width = 256;
+        canvas.height = 256;
 
-        // Dibujar el fondo (café cartón)
-        ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+        // Fondo café cartón
+        ctx.fillStyle = '#8B4513';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Dibujar el número grande
-        ctx.fillStyle = 'black'; // Color del número
-        ctx.font = 'bold 80px sans-serif'; // Fuente y tamaño
+        // Texto del número
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 120px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(number, canvas.width / 2, canvas.height / 2); // Dibujar en el centro
+        ctx.fillText(numero, canvas.width / 2, canvas.height / 2);
 
-        // Crear una textura a partir del canvas
         const texture = new THREE.CanvasTexture(canvas);
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
         return texture;
     }
 
@@ -185,29 +163,27 @@
 
         const geometry = new THREE.BoxGeometry(w, h, l);
         
-        // Crear textura con el número actual
-        const texture = createBoxNumberTexture(boxCounter, 0x8B4513);
+        // Aquí creamos la textura con el número actual
+        const textura = crearTexturaNumero(boxCounter);
         
-        // Aplicar la textura a las 6 caras
         const material = new THREE.MeshPhongMaterial({ 
-            map: texture, 
+            map: textura, // Le ponemos el dibujo del número
             transparent: true, 
-            opacity: 0.8 
+            opacity: 0.9 
         });
         
         const mesh = new THREE.Mesh(geometry, material);
         
-        // Bordes de la caja (blancos por defecto)
         const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
         mesh.add(line);
 
-        // Posición inicial (elevada)
         mesh.position.set((Math.random() - 0.5) * 100, 100, (Math.random() - 0.5) * 100);
         
         scene.add(mesh);
-        boxesArray.push(mesh); 
-        boxCounter++; // Incrementar contador para la siguiente caja
+        boxesArray.push(mesh);
+        
+        boxCounter++; // Sumamos 1 para la siguiente caja
     }
 
     function animate() {
