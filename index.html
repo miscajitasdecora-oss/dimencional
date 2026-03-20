@@ -3,28 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador ViAngel 3D con Regla</title>
+    <title>ViAngel - Simulador N400</title>
     <style>
-        body { margin: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; background-color: #e0e0e0; }
-        #controles { padding: 15px; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 10; border-radius: 8px; margin: 10px; }
-        .input-group { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
-        input[type="number"] { padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 60px; text-align: center; }
-        label { font-weight: bold; font-size: 14px; }
-        #canvas-container { flex-grow: 1; cursor: move; }
-        h2 { margin-top: 0; margin-bottom: 10px; color: #333; font-size: 18px; text-align: center;}
-        #instrucciones { font-size: 12px; color: #666; text-align: center; margin-top: 5px;}
+        body { margin: 0; font-family: sans-serif; background-color: #f0f0f0; display: flex; flex-direction: column; height: 100vh; }
+        #controles { padding: 15px; background: white; z-index: 10; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .input-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        input { padding: 8px; width: 70px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #218838; }
+        #canvas-container { flex-grow: 1; }
+        .info { font-size: 12px; color: #555; margin-top: 5px; }
     </style>
 </head>
 <body>
 
 <div id="controles">
-    <h2>Dimensiones Caja (cm)</h2>
-    <div class="input-group">
-        <label>Ancho (w):</label> <input type="number" id="ancho" value="50" oninput="actualizarCaja()">
-        <label>Alto (h):</label> <input type="number" id="alto" value="50" oninput="actualizarCaja()">
-        <label>Largo (l):</label> <input type="number" id="largo" value="50" oninput="actualizarCaja()">
+    <h3>Simulador de Carga ViAngel</h3>
+    <div class="input-row">
+        <div><label>Ancho:</label><br><input type="number" id="ancho" value="50"></div>
+        <div><label>Alto:</label><br><input type="number" id="alto" value="50"></div>
+        <div><label>Largo:</label><br><input type="number" id="largo" value="50"></div>
+        <div style="align-self: flex-end;"><button onclick="actualizar()">DIBUJAR CAJA</button></div>
     </div>
-    <div id="instrucciones">Usa el mouse/dedo para rotar. Rueda/pellizco para zoom.</div>
+    <div class="info">Líneas azules: Espacio N400 (120x110x230cm) | Regla cada 10cm</div>
 </div>
 
 <div id="canvas-container"></div>
@@ -32,137 +33,79 @@
 <script type="module">
     import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
     import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls.js';
-    import { TextGeometry } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/geometries/TextGeometry.js';
-    import { FontLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/FontLoader.js';
 
-    let scene, camera, renderer, box, controls, font, labelsGroup;
-
-    init();
-    animate();
+    let scene, camera, renderer, box, container, controls;
 
     function init() {
-        // 1. Escena y Cámara
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xd0d0d0);
+        scene.background = new THREE.Color(0xcccccc);
         
-        camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 2000);
-        camera.position.set(80, 80, 150);
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(150, 150, 300);
 
-        // 2. Renderizador
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-        // 3. Controles
         controls = new OrbitControls(camera, renderer.domElement);
-        controls.enablePan = false; // Desactivar paneo para evitar perder la caja
 
-        // 4. Luces
-        const light = new THREE.DirectionalLight(0xffffff, 1.2);
-        light.position.set(1, 1, 2).normalize();
+        // Luz
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(1, 1, 2);
         scene.add(light);
-        scene.add(new THREE.AmbientLight(0x505050));
+        scene.add(new THREE.AmbientLight(0x404040));
 
-        // 5. Crear la Regla Visual
-        crearRegla();
+        // 1. DIBUJAR ESPACIO DE LA N400 (El furgón)
+        const geoN400 = new THREE.BoxGeometry(120, 110, 230);
+        const edgesN400 = new THREE.EdgesGeometry(geoN400);
+        container = new THREE.LineSegments(edgesN400, new THREE.LineBasicMaterial({ color: 0x0000ff }));
+        container.position.y = 55; // Elevar para que el piso sea 0
+        scene.add(container);
 
-        // 6. Grupo para las etiquetas de texto (para poder borrarlas)
-        labelsGroup = new THREE.Group();
-        scene.add(labelsGroup);
-
-        // 7. Cargar fuente para las etiquetas y crear la caja inicial
-        const loader = new FontLoader();
-        loader.load('https://cdn.skypack.dev/three@0.132.2/examples/fonts/helvetiker_regular.typeface.json', function (response) {
-            font = response;
-            actualizarCaja(); // Crear la caja inicial solo después de cargar la fuente
-        });
-
-        window.addEventListener('resize', onWindowResize, false);
-    }
-
-    function crearRegla() {
-        const materialLinea = new THREE.LineBasicMaterial({ color: 0x000000 });
-        const geometriaLinea = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-10, 0, 0), new THREE.Vector3(-10, 200, 0)]);
-        const lineaRegla = new THREE.Line(geometriaLinea, materialLinea);
-        scene.add(lineaRegla);
-
-        // Marcas cada 10 cm
-        for (let i = 0; i <= 200; i += 10) {
-            let largoMarca = (i % 50 === 0) ? 5 : 2; // Marcas largas cada 50cm
-            const puntosMarca = [new THREE.Vector3(-10 - largoMarca, i, 0), new THREE.Vector3(-10, i, 0)];
-            const geoMarca = new THREE.BufferGeometry().setFromPoints(puntosMarca);
-            const marca = new THREE.Line(geoMarca, materialLinea);
-            scene.add(marca);
+        // 2. DIBUJAR REGLA
+        const materialRegla = new THREE.LineBasicMaterial({ color: 0x000000 });
+        for (let i = 0; i <= 250; i += 10) {
+            const puntos = [new THREE.Vector3(-70, i, 0), new THREE.Vector3(-60, i, 0)];
+            const geo = new THREE.BufferGeometry().setFromPoints(puntos);
+            scene.add(new THREE.Line(geo, materialRegla));
         }
+
+        actualizar();
+        animate();
     }
 
-    function crearEtiqueta(texto, x, y, z) {
-        if (!font) return;
-        const textGeo = new TextGeometry(texto, {
-            font: font,
-            size: 6,
-            height: 1,
-            curveSegments: 12
-        });
-        const textMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
-        const mesh = new THREE.Mesh(textGeo, textMaterial);
-        mesh.position.set(x, y, z);
-        labelsGroup.add(mesh);
-    }
+    window.actualizar = function() {
+        const w = parseFloat(document.getElementById('ancho').value);
+        const h = parseFloat(document.getElementById('alto').value);
+        const l = parseFloat(document.getElementById('largo').value);
 
-    window.actualizarCaja = function() {
-        if (!font) return;
-
-        const w = parseFloat(document.getElementById('ancho').value) || 1;
-        const h = parseFloat(document.getElementById('alto').value) || 1;
-        const l = parseFloat(document.getElementById('largo').value) || 1;
-
-        // Limpiar caja y etiquetas anteriores
         if (box) scene.remove(box);
-        labelsGroup.clear();
 
-        // Crear nueva geometría de caja
         const geometry = new THREE.BoxGeometry(w, h, l);
-        const material = new THREE.MeshPhongMaterial({ 
-            color: 0x8B4513, // Café cartón
-            transparent: false
-        });
-        
+        const material = new THREE.MeshPhongMaterial({ color: 0x8B4513, transparent: true, opacity: 0.8 });
         box = new THREE.Mesh(geometry, material);
         
-        // Bordes negros
+        // Bordes de la caja
         const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
         box.add(line);
 
+        box.position.y = h / 2; // Ponerla sobre el piso
         scene.add(box);
-
-        // Crear etiquetas de medidas
-        crearEtiqueta(`${w} cm (Ancho)`, w/2 + 5, -5, l/2);
-        crearEtiqueta(`${h} cm (Alto)`, -w/2 - 25, h/2 - 3, l/2);
-        crearEtiqueta(`${l} cm (Largo)`, w/2 + 5, -5, -l/2 + 10);
-        
-        // Etiqueta de la regla
-        crearEtiqueta(`${h} cm`, -30, h, 0);
-    }
-
-    function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
     function animate() {
         requestAnimationFrame(animate);
         renderer.render(scene, camera);
-        if (labelsGroup) {
-            // Hacer que las etiquetas siempre miren a la cámara
-            labelsGroup.children.forEach(label => {
-                label.quaternion.copy(camera.quaternion);
-            });
-        }
     }
-</script>
 
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    init();
+</script>
 </body>
 </html>
