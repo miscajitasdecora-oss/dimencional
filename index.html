@@ -2,38 +2,31 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Simulador Pro ViAngel - N400</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViAngel - Visualizador de Cajas v2.0</title>
     <style>
-        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f0f0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        #controles { padding: 10px; background: #2c3e50; color: white; z-index: 10; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
-        .input-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 5px;}
-        input { padding: 5px; width: 50px; border-radius: 4px; border: none; text-align: center;}
-        button { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.3s; }
-        .btn-add { background: #27ae60; color: white; }
-        .btn-rot { background: #f39c12; color: white; }
-        .btn-del { background: #e74c3c; color: white; }
+        body { margin: 0; font-family: sans-serif; background-color: #f0f0f0; display: flex; flex-direction: column; height: 100vh; overflow: hidden;}
+        #controles { padding: 10px; background: white; z-index: 10; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .input-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        input { padding: 6px; width: 60px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         #canvas-container { flex-grow: 1; position: relative; }
-        .label-n400 { position: absolute; color: #0000ff; font-weight: bold; background: rgba(255,255,255,0.7); padding: 2px 5px; border-radius: 3px; pointer-events: none; font-size: 12px; }
+        .info-panel { position: absolute; bottom: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 4px; font-size: 11px; color: #333; pointer-events: none;}
     </style>
 </head>
 <body>
 
 <div id="controles">
     <div class="input-row">
-        <div><small>Ancho</small><br><input type="number" id="w" value="40"></div>
-        <div><small>Alto</small><br><input type="number" id="h" value="30"></div>
-        <div><small>Largo</small><br><input type="number" id="l" value="50"></div>
-        <button class="btn-add" onclick="agregarCaja()">+ CAJA</button>
-        <button class="btn-rot" onclick="rotar('x')">GIRAR X</button>
-        <button class="btn-rot" onclick="rotar('y')">GIRAR Y</button>
-        <button class="btn-rot" onclick="rotar('z')">GIRAR Z</button>
-        <button class="btn-del" onclick="borrarCaja()">BORRAR</button>
+        <div><label>Ancho</label><br><input type="number" id="w" value="40"></div>
+        <div><label>Alto</label><br><input type="number" id="h" value="30"></div>
+        <div><label>Largo</label><br><input type="number" id="l" value="50"></div>
+        <div style="align-self: flex-end;"><button onclick="agregarCaja()">+ CAJA</button></div>
     </div>
 </div>
 
 <div id="canvas-container">
-    <div class="label-n400" style="top: 10px; right: 10px;">CAPACIDAD N400: 120x110x230 cm</div>
+    <div class="info-panel">Arriba: Solo una caja se mueve a la vez. Se ajustará automáticamente al piso u otras cajas.</div>
 </div>
 
 <script type="module">
@@ -42,65 +35,129 @@
     import { DragControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/DragControls.js';
 
     let scene, camera, renderer, controls, dragControls;
-    let cajasArray = [];
-    let seleccionado = null;
+    let groundMesh, boxesArray = [];
+    let selectedObject = null;
+    let currentDragControls = null;
 
     function init() {
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xdddddd);
+        scene.background = new THREE.Color(0xdcdcdc);
         
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(200, 200, 400);
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(150, 150, 300);
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
         controls = new OrbitControls(camera, renderer.domElement);
-        controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+        controls.enablePan = false;
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-        dirLight.position.set(100, 200, 100);
-        scene.add(dirLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const light = new THREE.DirectionalLight(0xffffff, 0.8);
+        light.position.set(1, 1, 1).normalize();
+        scene.add(light);
 
-        // MARCO N400 (Azul)
-        const geoN400 = new THREE.BoxGeometry(120, 110, 230);
-        const edges = new THREE.EdgesGeometry(geoN400);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 }));
-        line.position.y = 55;
-        scene.add(line);
+        // 1. DIBUJAR SUELO (SÍNTESIS DEL PISO DE LA N400)
+        // Creé un plano sólido para facilitar el ajuste de altura
+        const groundGeo = new THREE.PlaneGeometry(300, 300);
+        const groundMat = new THREE.MeshBasicMaterial({ color: 0xc0c0c0, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+        groundMesh = new THREE.Mesh(groundGeo, groundMat);
+        groundMesh.rotation.x = -Math.PI / 2;
+        groundMesh.position.y = -1; // Un poco abajo del nivel 0
+        scene.add(groundMesh);
 
-        // REGLA CON NÚMEROS
-        for (let i = 0; i <= 200; i += 20) {
-            crearMarcaRegla(i);
-        }
-
-        // PISO DE CARGA (Referencia)
-        const grid = new THREE.GridHelper(400, 20, 0x000000, 0xbbbbbb);
+        const grid = new THREE.GridHelper(300, 10, 0x000000, 0x000000);
         scene.add(grid);
 
-        window.addEventListener('mousedown', onMouseDown);
+        // 2. REGLA VISUAL
+        const materialRegla = new THREE.LineBasicMaterial({ color: 0x000000 });
+        for (let i = 0; i <= 150; i += 10) {
+            const puntos = [new THREE.Vector3(-100, i, 0), new THREE.Vector3(-90, i, 0)];
+            const geo = new THREE.BufferGeometry().setFromPoints(puntos);
+            scene.add(new THREE.Line(geo, materialRegla));
+        }
+
         animate();
+        iniciarLogicaSeleccionUnica();
     }
 
-    function crearMarcaRegla(y) {
-        // Linea de la marca
-        const pts = [new THREE.Vector3(-100, y, 0), new THREE.Vector3(-80, y, 0)];
-        const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        scene.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x000000 })));
+    // --- LÓGICA DE SOLUCIÓN AL PROBLEMA 1 (SELECCIÓN ÚNICA) ---
+    function iniciarLogicaSeleccionUnica() {
+        renderer.domElement.addEventListener('click', (event) => {
+            // Raycast desde la cámara al mouse
+            const mouse = new THREE.Vector2();
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-        // Numero (Canvas Sprite)
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 64; canvas.height = 64;
-        ctx.fillStyle = 'black'; ctx.font = '32px Arial';
-        ctx.fillText(y + 'cm', 0, 40);
-        const tex = new THREE.CanvasTexture(canvas);
-        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
-        sprite.position.set(-120, y, 0);
-        sprite.scale.set(30, 30, 1);
-        scene.add(sprite);
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+
+            // Buscar la primera caja tocada
+            const intersects = raycaster.intersectObjects(boxesArray);
+
+            if (intersects.length > 0) {
+                // Deseleccionar anterior
+                if (selectedObject) selectedObject.material.color.setHex(0x8B4513);
+
+                // Seleccionar nueva
+                selectedObject = intersects[0].object;
+                selectedObject.material.color.setHex(0x87CEEB); // Celeste de selección de image_22.png
+
+                // Eliminar controles de arrastre anteriores
+                if (currentDragControls) currentDragControls.dispose();
+
+                // Crear NUEVOS controles de arrastre *SÓLO* para esta caja seleccionada
+                currentDragControls = new DragControls([selectedObject], camera, renderer.domElement);
+                
+                // Desactivar cámara durante el arrastre
+                currentDragControls.addEventListener('dragstart', () => controls.enabled = false);
+                
+                // --- AGREGAR LÓGICA DE SOLUCIÓN AL PROBLEMA 2 (AJUSTE AUTOMÁTICO) ---
+                currentDragControls.addEventListener('drag', onDragSnap);
+                
+                // Re-activar cámara al soltar
+                currentDragControls.addEventListener('dragend', (endEvent) => {
+                    controls.enabled = true;
+                    // Al soltar la caja, destruir los controles temporales
+                    currentDragControls.dispose();
+                    currentDragControls = null;
+                });
+
+            } else {
+                // Si no toqué ninguna caja, deseleccionar
+                if (selectedObject) selectedObject.material.color.setHex(0x8B4513);
+                selectedObject = null;
+                if (currentDragControls) currentDragControls.dispose();
+            }
+        });
+    }
+
+    // --- LÓGICA DE SOLUCIÓN AL PROBLEMA 2 (AJUSTE AUTOMÁTICO DE ALTURA) ---
+    function onDragSnap(event) {
+        const object = event.object;
+        
+        // Raycaster desde el centro de la caja MIRANDO HACIA ABAJO
+        const raycasterDown = new THREE.Raycaster();
+        raycasterDown.ray.origin.set(object.position.x, object.position.y, object.position.z);
+        raycasterDown.ray.direction.set(0, -1, 0); // Dirección ABAJO
+
+        // Objetos a chequear: el suelo Y todas las otras cajas (excluyendo la que arrastras)
+        const objectsToCheck = [groundMesh, ...boxesArray.filter(b => b !== object)];
+
+        const intersects = raycasterDown.intersectObjects(objectsToCheck);
+
+        if (intersects.length > 0) {
+            // Encontré una superficie (suelo u otra caja)
+            // Ajustar altura de la caja para que "encaje" perfectamente
+            const closestIntersection = intersects[0];
+            const objectHeight = object.geometry.parameters.height;
+            object.position.y = closestIntersection.point.y + (objectHeight / 2);
+
+        } else {
+            // Si no encontré superficie (estoy sobre el vacío), snap al nivel 0 por defecto
+            object.position.y = (object.geometry.parameters.height / 2); 
+        }
     }
 
     window.agregarCaja = function() {
@@ -108,77 +165,32 @@
         const h = parseFloat(document.getElementById('h').value);
         const l = parseFloat(document.getElementById('l').value);
 
-        const geo = new THREE.BoxGeometry(w, h, l);
-        const mat = new THREE.MeshPhongMaterial({ color: 0x8B4513, transparent: true, opacity: 0.8 });
-        const mesh = new THREE.Mesh(geo, mat);
+        const geometry = new THREE.BoxGeometry(w, h, l);
+        const material = new THREE.MeshPhongMaterial({ color: 0x8B4513, transparent: true, opacity: 0.8 });
+        const mesh = new THREE.Mesh(geometry, material);
         
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff }));
-        mesh.add(edges);
+        // Bordes de la caja
+        const edges = new THREE.EdgesGeometry(geometry);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
+        mesh.add(line);
 
-        mesh.userData = { w, h, l };
-        mesh.position.set(0, h/2, 200);
+        // Posición inicial (elevada)
+        mesh.position.set((Math.random() - 0.5) * 100, 100, (Math.random() - 0.5) * 100);
+        
         scene.add(mesh);
-        cajasArray.push(mesh);
-        
-        actualizarDrag();
-    }
-
-    function actualizarDrag() {
-        if (dragControls) dragControls.dispose();
-        dragControls = new DragControls(cajasArray, camera, renderer.domElement);
-        dragControls.addEventListener('dragstart', (e) => { 
-            seleccionado = e.object; 
-            destacar(seleccionado);
-            controls.enabled = false; 
-        });
-        dragControls.addEventListener('drag', (e) => { 
-            e.object.position.y = Math.max(e.object.position.y, 0); // No traspasar el piso
-            chequearChoque(e.object);
-        });
-        dragControls.addEventListener('dragend', () => { controls.enabled = true; });
-    }
-
-    function destacar(obj) {
-        cajasArray.forEach(c => c.material.color.setHex(0x8B4513));
-        if (obj) obj.material.color.setHex(0x3498db);
-    }
-
-    window.rotar = function(eje) {
-        if (!seleccionado) return;
-        if (eje === 'x') seleccionado.rotation.x += Math.PI / 2;
-        if (eje === 'y') seleccionado.rotation.y += Math.PI / 2;
-        if (eje === 'z') seleccionado.rotation.z += Math.PI / 2;
-        chequearChoque(seleccionado);
-    }
-
-    window.borrarCaja = function() {
-        if (!seleccionado) return;
-        scene.remove(seleccionado);
-        cajasArray = cajasArray.filter(c => c !== seleccionado);
-        seleccionado = null;
-        actualizarDrag();
-    }
-
-    function chequearChoque(activa) {
-        let choca = false;
-        const b1 = new THREE.Box3().setFromObject(activa);
-        cajasArray.forEach(c => {
-            if (c !== activa) {
-                const b2 = new THREE.Box3().setFromObject(c);
-                if (b1.intersectsBox(b2)) choca = true;
-            }
-        });
-        activa.material.color.setHex(choca ? 0xff0000 : 0x3498db);
-    }
-
-    function onMouseDown(e) {
-        if (e.button === 2) destacar(null); // Click derecho para deseleccionar
+        boxesArray.push(mesh); // Guardar en el array para la selección única
     }
 
     function animate() {
         requestAnimationFrame(animate);
         renderer.render(scene, camera);
     }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
 
     init();
 </script>
