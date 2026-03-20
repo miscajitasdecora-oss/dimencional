@@ -3,38 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ViAngel - Simulador Tetris N400</title>
+    <title>Simulador Pro ViAngel - N400</title>
     <style>
-        body { margin: 0; font-family: sans-serif; background-color: #f0f0f0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        #controles { padding: 10px; background: white; z-index: 10; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-        .input-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: flex-end;}
-        input { padding: 6px; width: 60px; border: 1px solid #ccc; border-radius: 4px; text-align: center;}
-        .btns { display: flex; gap: 5px; }
-        button { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; }
-        .btn-add { background: #28a745; }
-        .btn-rotate { background: #ffc107; color: black; }
-        .btn-delete { background: #dc3545; }
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f0f0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        #controles { padding: 10px; background: #2c3e50; color: white; z-index: 10; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .input-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 5px;}
+        input { padding: 5px; width: 50px; border-radius: 4px; border: none; text-align: center;}
+        button { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-add { background: #27ae60; color: white; }
+        .btn-rot { background: #f39c12; color: white; }
+        .btn-del { background: #e74c3c; color: white; }
         #canvas-container { flex-grow: 1; position: relative; }
-        .info-panel { position: absolute; bottom: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 4px; font-size: 11px; color: #333; pointer-events: none;}
+        .label-n400 { position: absolute; color: #0000ff; font-weight: bold; background: rgba(255,255,255,0.7); padding: 2px 5px; border-radius: 3px; pointer-events: none; font-size: 12px; }
     </style>
 </head>
 <body>
 
 <div id="controles">
     <div class="input-row">
-        <div><label>Ancho</label><br><input type="number" id="w" value="40"></div>
-        <div><label>Alto</label><br><input type="number" id="h" value="30"></div>
-        <div><label>Largo</label><br><input type="number" id="l" value="50"></div>
-        <div class="btns">
-            <button class="btn-add" onclick="agregarCaja()">+ CAJA</button>
-            <button class="btn-rotate" onclick="girarCaja()">GIRAR 90°</button>
-            <button class="btn-delete" onclick="borrarCaja()">BORRAR</button>
-        </div>
+        <div><small>Ancho</small><br><input type="number" id="w" value="40"></div>
+        <div><small>Alto</small><br><input type="number" id="h" value="30"></div>
+        <div><small>Largo</small><br><input type="number" id="l" value="50"></div>
+        <button class="btn-add" onclick="agregarCaja()">+ CAJA</button>
+        <button class="btn-rot" onclick="rotar('x')">GIRAR X</button>
+        <button class="btn-rot" onclick="rotar('y')">GIRAR Y</button>
+        <button class="btn-rot" onclick="rotar('z')">GIRAR Z</button>
+        <button class="btn-del" onclick="borrarCaja()">BORRAR</button>
     </div>
 </div>
 
 <div id="canvas-container">
-    <div class="info-panel">Arriba: N400 (Azul) 120x110x230cm | Piso Externo (Rojo)<br>Arrastra cajas con 1 dedo. Rota la cámara con 2 dedos.</div>
+    <div class="label-n400" style="top: 10px; right: 10px;">CAPACIDAD N400: 120x110x230 cm</div>
 </div>
 
 <script type="module">
@@ -43,82 +42,65 @@
     import { DragControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/DragControls.js';
 
     let scene, camera, renderer, controls, dragControls;
-    let containerN400, groundExternal;
     let cajasArray = [];
-    let cajaSeleccionada = null;
-
-    // Medidas N400 (con labels virtuales)
-    const N400_W = 120;
-    const N400_H = 110;
-    const N400_L = 230;
+    let seleccionado = null;
 
     function init() {
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xcccccc);
+        scene.background = new THREE.Color(0xdddddd);
         
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(180, 180, 400);
+        camera.position.set(200, 200, 400);
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-        // Controles de Cámara (2 dedos para rotar en móvil)
         controls = new OrbitControls(camera, renderer.domElement);
-        controls.enablePan = false;
-        controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+        controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 
-        // Luces
-        scene.add(new THREE.AmbientLight(0x606060));
-        const light = new THREE.DirectionalLight(0xffffff, 1);
-        light.position.set(1, 1, 1).normalize();
-        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(100, 200, 100);
+        scene.add(dirLight);
 
-        // 1. ESPACIO N400 (Marco Azul)
-        const geoN400 = new THREE.BoxGeometry(N400_W, N400_H, N400_L);
-        const edgesN400 = new THREE.EdgesGeometry(geoN400);
-        containerN400 = new THREE.LineSegments(edgesN400, new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 }));
-        containerN400.position.y = N400_H / 2; // Sobre el piso 0
-        scene.add(containerN400);
+        // MARCO N400 (Azul)
+        const geoN400 = new THREE.BoxGeometry(120, 110, 230);
+        const edges = new THREE.EdgesGeometry(geoN400);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 }));
+        line.position.y = 55;
+        scene.add(line);
 
-        // 2. PISO EXTERNO (Cuadrado Rojo para el "Tetris")
-        const geoGround = new THREE.PlaneGeometry(300, 300);
-        const matGround = new THREE.MeshBasicMaterial({ color: 0xff4444, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
-        groundExternal = new THREE.Mesh(geoGround, matGround);
-        groundExternal.rotation.x = -Math.PI / 2;
-        groundExternal.position.set(0, -1, 300); // Delante y un poco más abajo del furgón
-        scene.add(groundExternal);
-
-        // 3. REGLA VISUAL (Eje Y)
-        const materialRegla = new THREE.LineBasicMaterial({ color: 0x000000 });
-        for (let i = 0; i <= 250; i += 10) {
-            const puntos = [new THREE.Vector3(-100, i, 0), new THREE.Vector3(-90, i, 0)];
-            const geo = new THREE.BufferGeometry().setFromPoints(puntos);
-            scene.add(new THREE.Line(geo, materialRegla));
+        // REGLA CON NÚMEROS
+        for (let i = 0; i <= 200; i += 20) {
+            crearMarcaRegla(i);
         }
 
-        iniciarDragControls();
+        // PISO DE CARGA (Referencia)
+        const grid = new THREE.GridHelper(400, 20, 0x000000, 0xbbbbbb);
+        scene.add(grid);
+
+        window.addEventListener('mousedown', onMouseDown);
         animate();
     }
 
-    function iniciarDragControls() {
-        if (dragControls) dragControls.dispose();
-        dragControls = new DragControls(cajasArray, camera, renderer.domElement);
-        
-        dragControls.addEventListener('dragstart', function (event) {
-            controls.enabled = false; // Apagar cámara al arrastrar
-            cajaSeleccionada = event.object;
-            destacarCaja(cajaSeleccionada);
-        });
+    function crearMarcaRegla(y) {
+        // Linea de la marca
+        const pts = [new THREE.Vector3(-100, y, 0), new THREE.Vector3(-80, y, 0)];
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        scene.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x000000 })));
 
-        dragControls.addEventListener('drag', function (event) {
-            event.object.position.y = event.object.userData.height / 2; // Mantener siempre en el piso
-            verificarColisiones(event.object);
-        });
-
-        dragControls.addEventListener('dragend', function (event) {
-            controls.enabled = true; // Prender cámara al soltar
-        });
+        // Numero (Canvas Sprite)
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 64; canvas.height = 64;
+        ctx.fillStyle = 'black'; ctx.font = '32px Arial';
+        ctx.fillText(y + 'cm', 0, 40);
+        const tex = new THREE.CanvasTexture(canvas);
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
+        sprite.position.set(-120, y, 0);
+        sprite.scale.set(30, 30, 1);
+        scene.add(sprite);
     }
 
     window.agregarCaja = function() {
@@ -126,77 +108,77 @@
         const h = parseFloat(document.getElementById('h').value);
         const l = parseFloat(document.getElementById('l').value);
 
-        const geometry = new THREE.BoxGeometry(w, h, l);
-        const material = new THREE.MeshPhongMaterial({ color: 0x8B4513, transparent: true, opacity: 0.8 });
-        const mesh = new THREE.Mesh(geometry, material);
+        const geo = new THREE.BoxGeometry(w, h, l);
+        const mat = new THREE.MeshPhongMaterial({ color: 0x8B4513, transparent: true, opacity: 0.8 });
+        const mesh = new THREE.Mesh(geo, mat);
         
-        // Bordes de la caja
-        const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
-        mesh.add(line);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff }));
+        mesh.add(edges);
 
-        // Propiedades y posición inicial (en el piso rojo)
-        mesh.userData = { width: w, height: h, length: l, originalColor: 0x8B4513 };
-        mesh.position.set( (Math.random() - 0.5) * 100, h / 2, 300 + (Math.random() - 0.5) * 100);
-        
+        mesh.userData = { w, h, l };
+        mesh.position.set(0, h/2, 200);
         scene.add(mesh);
         cajasArray.push(mesh);
-        cajaSeleccionada = mesh;
-        destacarCaja(mesh);
-        iniciarDragControls(); // Actualizar DragControls con la nueva caja
+        
+        actualizarDrag();
     }
 
-    window.girarCaja = function() {
-        if (!cajaSeleccionada) return;
-        cajaSeleccionada.rotation.y += Math.PI / 2;
-        verificarColisiones(cajaSeleccionada);
+    function actualizarDrag() {
+        if (dragControls) dragControls.dispose();
+        dragControls = new DragControls(cajasArray, camera, renderer.domElement);
+        dragControls.addEventListener('dragstart', (e) => { 
+            seleccionado = e.object; 
+            destacar(seleccionado);
+            controls.enabled = false; 
+        });
+        dragControls.addEventListener('drag', (e) => { 
+            e.object.position.y = Math.max(e.object.position.y, 0); // No traspasar el piso
+            chequearChoque(e.object);
+        });
+        dragControls.addEventListener('dragend', () => { controls.enabled = true; });
+    }
+
+    function destacar(obj) {
+        cajasArray.forEach(c => c.material.color.setHex(0x8B4513));
+        if (obj) obj.material.color.setHex(0x3498db);
+    }
+
+    window.rotar = function(eje) {
+        if (!seleccionado) return;
+        if (eje === 'x') seleccionado.rotation.x += Math.PI / 2;
+        if (eje === 'y') seleccionado.rotation.y += Math.PI / 2;
+        if (eje === 'z') seleccionado.rotation.z += Math.PI / 2;
+        chequearChoque(seleccionado);
     }
 
     window.borrarCaja = function() {
-        if (!cajaSeleccionada) return;
-        scene.remove(cajaSeleccionada);
-        const index = cajasArray.indexOf(cajaSeleccionada);
-        if (index > -1) cajasArray.splice(index, 1);
-        cajaSeleccionada = null;
-        iniciarDragControls();
+        if (!seleccionado) return;
+        scene.remove(seleccionado);
+        cajasArray = cajasArray.filter(c => c !== seleccionado);
+        seleccionado = null;
+        actualizarDrag();
     }
 
-    function destacarCaja(mesh) {
-        cajasArray.forEach(c => c.material.color.setHex(c.userData.originalColor));
-        if (mesh) mesh.material.color.setHex(0x5555ff); // Azul al seleccionar
-    }
-
-    function verificarColisiones(cajaActiva) {
-        let colision = false;
-        const boxActiva = new THREE.Box3().setFromObject(cajaActiva);
-
-        cajasArray.forEach(caja => {
-            if (caja !== cajaActiva) {
-                const boxOtras = new THREE.Box3().setFromObject(caja);
-                if (boxActiva.intersectsBox(boxOtras)) {
-                    colision = true;
-                }
+    function chequearChoque(activa) {
+        let choca = false;
+        const b1 = new THREE.Box3().setFromObject(activa);
+        cajasArray.forEach(c => {
+            if (c !== activa) {
+                const b2 = new THREE.Box3().setFromObject(c);
+                if (b1.intersectsBox(b2)) choca = true;
             }
         });
+        activa.material.color.setHex(choca ? 0xff0000 : 0x3498db);
+    }
 
-        // Cambiar color si hay choque (Rojo si choca, Azul si está seleccionada y ok)
-        if (colision) {
-            cajaActiva.material.color.setHex(0xff0000);
-        } else {
-            cajaActiva.material.color.setHex(0x5555ff);
-        }
+    function onMouseDown(e) {
+        if (e.button === 2) destacar(null); // Click derecho para deseleccionar
     }
 
     function animate() {
         requestAnimationFrame(animate);
         renderer.render(scene, camera);
     }
-
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
 
     init();
 </script>
